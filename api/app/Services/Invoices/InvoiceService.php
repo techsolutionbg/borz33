@@ -10,6 +10,7 @@ use App\Models\Invoice;
 use App\Models\Order;
 use App\Services\Accounting\AccountingAuditService;
 use App\Services\Accounting\AccountingPeriodLock;
+use App\Services\Company\CompanyProfile;
 use Illuminate\Database\Capsule\Manager as Capsule;
 
 final class InvoiceService
@@ -117,7 +118,7 @@ final class InvoiceService
         $shippingFullyCredited = abs((float) $invoice->shipping_net) < 0.01 || $shippingAlreadyCredited || $refundShipping;
 
         $credit = Capsule::connection()->transaction(function () use ($invoice, $reason, $items, $subtotalNet, $shippingNet, $taxAmount, $totalGross, $createdBy, $allItemsCredited, $shippingFullyCredited): Invoice {
-            $credit = Invoice::query()->create(['order_id' => $invoice->order_id, 'parent_invoice_id' => $invoice->id, 'type' => 'credit_note', 'status' => 'draft', 'currency' => $invoice->currency, 'seller_snapshot' => $invoice->seller_snapshot, 'buyer_snapshot' => $invoice->buyer_snapshot, 'payment_snapshot' => $invoice->payment_snapshot, 'items_snapshot' => $items, 'subtotal_net' => $subtotalNet, 'discount_net' => 0, 'shipping_net' => $shippingNet, 'tax_amount' => $taxAmount, 'total_gross' => $totalGross, 'reason' => $reason, 'created_by' => $createdBy]);
+            $credit = Invoice::query()->create(['order_id' => $invoice->order_id, 'parent_invoice_id' => $invoice->id, 'type' => 'credit_note', 'status' => 'draft', 'currency' => $invoice->currency, 'seller_snapshot' => $this->currentSellerSnapshot($invoice->seller_snapshot), 'buyer_snapshot' => $invoice->buyer_snapshot, 'payment_snapshot' => $invoice->payment_snapshot, 'items_snapshot' => $items, 'subtotal_net' => $subtotalNet, 'discount_net' => 0, 'shipping_net' => $shippingNet, 'tax_amount' => $taxAmount, 'total_gross' => $totalGross, 'reason' => $reason, 'created_by' => $createdBy]);
             $credit = $this->issueInsideTransaction($credit);
             if ($allItemsCredited && $shippingFullyCredited) { $invoice->status = 'credited'; $invoice->save(); }
             return $credit;
@@ -157,12 +158,25 @@ final class InvoiceService
 
     private function snapshot(Order $order): array
     {
-        $company = require dirname(__DIR__, 4) . '/config/company.php'; $rate = $order->vat_enabled ? max(0.0, (float) $order->vat_rate) : 0.0; $divisor = 1 + $rate / 100;
+        $company = CompanyProfile::get(); $rate = $order->vat_enabled ? max(0.0, (float) $order->vat_rate) : 0.0; $divisor = 1 + $rate / 100;
         $items = []; $itemsNet = 0.0; $itemsTax = 0.0;
         foreach ($order->items as $item) { $gross = round((float) $item->total, 2); $net = round($gross / $divisor, 2); $tax = round($gross - $net, 2); $itemsNet += $net; $itemsTax += $tax; $items[] = ['name' => (string) $item->name, 'sku' => (string) ($item->sku ?? ''), 'qty' => (int) $item->qty, 'unit_gross' => (float) $item->unit_price, 'net_total' => $net, 'tax_rate' => $rate, 'tax' => $tax, 'gross_total' => $gross]; }
         $shippingGross = round((float) $order->shipping_amount, 2); $shippingNet = round($shippingGross / $divisor, 2); $shippingTax = round($shippingGross - $shippingNet, 2);
         $paymentLabels = ['cash_on_delivery' => 'Наложен платеж', 'bank_transfer' => 'Банков превод', 'card' => 'Карта'];
-        return ['currency' => $order->currency, 'seller_snapshot' => ['company' => $company['legal_name'], 'eik' => $company['eik'], 'vat_registered' => (bool) $order->vat_enabled, 'vat_rate' => $rate, 'vat_number' => $order->vat_enabled ? $company['vat'] : null, 'address' => trim($company['address'] . ', ' . $company['postal_code'] . ' ' . $company['city'] . ', ' . $company['country']), 'mol' => $company['mol']], 'buyer_snapshot' => ['company' => $order->invoice_company ?: trim($order->first_name . ' ' . $order->last_name), 'eik' => $order->invoice_eik, 'vat_number' => $order->invoice_vat_number, 'address' => $order->invoice_address ?: trim($order->address_line . ', ' . $order->postal_code . ' ' . $order->city . ', ' . $order->country), 'mol' => $order->invoice_mol, 'email' => $order->email], 'payment_snapshot' => ['method' => $order->payment_method, 'label' => $paymentLabels[$order->payment_method] ?? $order->payment_method], 'items_snapshot' => $items, 'subtotal_net' => round($itemsNet, 2), 'discount_net' => 0, 'shipping_net' => $shippingNet, 'tax_amount' => round($itemsTax + $shippingTax, 2), 'total_gross' => round((float) $order->total, 2)];
+        return ['currency' => $order->currency, 'seller_snapshot' => ['company' => $company['legal_name'], 'eik' => $company['eik'], 'vat_registered' => (bool) $order->vat_enabled, 'vat_rate' => $rate, 'vat_number' => $order->vat_enabled ? $company['vat'] : null, 'address' => $this->companyAddress($company), 'mol' => $company['mol']], 'buyer_snapshot' => ['company' => $order->invoice_company ?: trim($order->first_name . ' ' . $order->last_name), 'eik' => $order->invoice_eik, 'vat_number' => $order->invoice_vat_number, 'address' => $order->invoice_address ?: trim($order->address_line . ', ' . $order->postal_code . ' ' . $order->city . ', ' . $order->country), 'mol' => $order->invoice_mol, 'email' => $order->email], 'payment_snapshot' => ['method' => $order->payment_method, 'label' => $paymentLabels[$order->payment_method] ?? $order->payment_method], 'items_snapshot' => $items, 'subtotal_net' => round($itemsNet, 2), 'discount_net' => 0, 'shipping_net' => $shippingNet, 'tax_amount' => round($itemsTax + $shippingTax, 2), 'total_gross' => round((float) $order->total, 2)];
+    }
+
+    /** @param array<string, mixed> $previous */
+    private function currentSellerSnapshot(array $previous): array
+    {
+        $company = CompanyProfile::get();
+        return ['company' => $company['legal_name'], 'eik' => $company['eik'], 'vat_registered' => (bool) ($previous['vat_registered'] ?? false), 'vat_rate' => (float) ($previous['vat_rate'] ?? 0), 'vat_number' => !empty($previous['vat_registered']) ? $company['vat'] : null, 'address' => $this->companyAddress($company), 'mol' => $company['mol']];
+    }
+
+    /** @param array<string, mixed> $company */
+    private function companyAddress(array $company): string
+    {
+        return trim(implode(', ', array_filter([trim((string) ($company['address'] ?? '')), trim((string) ($company['postal_code'] ?? '') . ' ' . (string) ($company['city'] ?? '')), trim((string) ($company['country'] ?? ''))])));
     }
 
     private function issueInsideTransaction(Invoice $invoice): Invoice

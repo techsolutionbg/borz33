@@ -1,0 +1,11 @@
+.git
+vendor
+node_modules
+admin/dist
+web/public/build
+public/build
+.tmp
+storage
+.env
+.env.*
+*.lock

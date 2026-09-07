@@ -311,7 +311,7 @@ export function SettingsPage() {
             {econtForm.environment === 'production' ? <>
               <div className="flex items-start gap-3 border border-amber-500/50 bg-amber-500/10 p-4 text-sm leading-relaxed text-foreground" role="alert">
                 <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
-                <div><strong className="block">Внимание: реална Econt среда</strong><span>Калкулациите и създадените товарителници са реални. Действията могат да променят и таксуват реалния Econt акаунт на фирмата.</span></div>
+                <div><strong className="block">Внимание: реална Econt среда</strong><span>Използват се реалният фирмен акаунт и актуалните тарифи на Econt. Изчисляването на доставка не създава пратка, но създаването на товарителници и други действия могат да се отразят в реалния Econt акаунт.</span></div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Label htmlFor="econt-username" className="grid gap-2 font-sans"><span>Username</span><input id="econt-username" className="h-10 border border-input bg-background px-3 text-foreground outline-none focus:border-ring" autoComplete="off" value={econtForm.username} onChange={(event) => setEcontForm((current) => ({ ...current, username: event.target.value }))} /></Label>

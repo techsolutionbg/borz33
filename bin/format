@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$ROOT_DIR"
+
+PRETTIER_VERSION="3.6.2"
+
+echo "==> Форматиране на frontend кода с Prettier ${PRETTIER_VERSION}..."
+npx --yes "prettier@${PRETTIER_VERSION}" --write \
+  "admin/src/**/*.{css,js,jsx,json,ts,tsx}" \
+  "web/**/*.{css,js,jsx,json,ts,tsx,vue}" \
+  "*.{json,md,yml,yaml}" \
+  --ignore-path .prettierignore
+
+if [ -x "vendor/bin/php-cs-fixer" ]; then
+  echo "==> Форматиране на PHP кода с PHP CS Fixer..."
+  vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.php --diff --verbose
+else
+  echo "==> PHP CS Fixer не е инсталиран; PHP файловете са пропуснати."
+  echo "    Инсталирай го с: composer require --dev friendsofphp/php-cs-fixer"
+fi
+
+echo "==> Форматирането завърши."

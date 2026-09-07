@@ -11,7 +11,11 @@ final class CompanyProfile
     /** @return array<string, string|float> */
     public static function get(): array
     {
-        $fallback = require dirname(__DIR__, 4) . '/config/company.php';
+        $fallback = [
+            'name' => 'Borz33', 'legal_name' => 'Borz33', 'eik' => '', 'vat' => '', 'mol' => '',
+            'address' => '', 'city' => '', 'postal_code' => '', 'country' => 'България',
+            'phone' => '', 'email' => '', 'website' => '', 'privacy_url' => '', 'terms_url' => '',
+        ];
 
         try {
             $settings = SiteSetting::query()->first();
