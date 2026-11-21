@@ -61,7 +61,7 @@ function store_nav_active(string $href, string $path): bool
 function store_asset(string $path): string
 {
     $file = dirname(__DIR__) . '/public' . $path;
-    $version = is_file($file) ? (string) filemtime($file) : '0';
+    $version = is_file($file) ? (string) filemtime($file) : '20261121-product-zoom';
 
     return $path . '?v=' . $version;
 }

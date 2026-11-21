@@ -156,14 +156,18 @@ class ShopController extends Controller
         }
 
         if ($inStock) {
-            $productsQuery->whereHas('variants', static fn (Builder $variants) => $variants->where('is_active', true)->where('stock', '>', 0));
+            $productsQuery->where(static function (Builder $builder): void {
+                $builder
+                    ->where(static fn (Builder $product) => $product->whereDoesntHave('variants', static fn (Builder $variants) => $variants->where('is_active', true))->where('stock', '>', 0))
+                    ->orWhereHas('variants', static fn (Builder $variants) => $variants->where('is_active', true)->where('stock', '>', 0));
+            });
         }
 
         if ($onSale) {
             $productsQuery->where(static function (Builder $builder): void {
                 $builder
-                    ->whereColumn('compare_at_price', '>', 'price')
-                    ->orWhereHas('variants', static fn (Builder $variants) => $variants->where('is_active', true)->whereColumn('compare_at_price', '>', 'price'));
+                    ->whereColumn('compare_at_price', '<', 'price')
+                    ->orWhereHas('variants', static fn (Builder $variants) => $variants->where('is_active', true)->whereColumn('compare_at_price', '<', 'price'));
             });
         }
 
@@ -490,7 +494,16 @@ class ShopController extends Controller
             }
         }
 
-        StoreCart::add((int) $product->id, $variantId, $qty, $personalization);
+        try {
+            StoreCart::add((int) $product->id, $variantId, $qty, $personalization);
+        } catch (\RuntimeException $exception) {
+            if ($this->wantsJson()) {
+                $this->json(['message' => $exception->getMessage()], 422);
+            }
+
+            StoreAuth::setFlash($exception->getMessage(), true);
+            $this->redirect('/products/' . $product->slug);
+        }
 
         if ($this->wantsJson()) {
             $this->json([
@@ -577,7 +590,7 @@ class ShopController extends Controller
             'errors' => [],
             'acceptedTerms' => false,
             'wantsInvoice' => false,
-            'robots' => 'noindex, nofollow',
+            'robots' => 'noindex, follow',
         ]);
     }
 
@@ -687,6 +700,11 @@ class ShopController extends Controller
 
         foreach ($lines as $line) {
             if ((int) $line['variant_id'] < 1) {
+                $product = Product::query()->find((int) $line['product_id']);
+                if ($product === null || (int) $product->stock < (int) $line['qty']) {
+                    $errors['stock'] = 'Наличността на един или повече избрани продукти вече не е достатъчна. Обновете количката и опитайте отново.';
+                    break;
+                }
                 continue;
             }
 
@@ -718,7 +736,7 @@ class ShopController extends Controller
                 'acceptedTerms' => $acceptedTerms,
                 'wantsInvoice' => $wantsInvoice,
                 'status' => 422,
-                'robots' => 'noindex, nofollow',
+                'robots' => 'noindex, follow',
             ]);
         }
 
@@ -783,6 +801,15 @@ class ShopController extends Controller
                     if ($purchasedVariant !== null && $purchasedVariant->product !== null) {
                         $this->adminNotifications->stockDepletedAfterPurchase($purchasedVariant->product, $purchasedVariant, (int) $line['qty'], (string) $order->number);
                     }
+                } else {
+                    $updated = Product::query()
+                        ->whereKey((int) $line['product_id'])
+                        ->where('stock', '>=', (int) $line['qty'])
+                        ->decrement('stock', (int) $line['qty']);
+
+                    if ($updated !== 1) {
+                        throw new \RuntimeException('Наличността на един или повече избрани продукти вече не е достатъчна. Обновете количката и опитайте отново.');
+                    }
                 }
 
                 $order->items()->create([
@@ -822,7 +849,7 @@ class ShopController extends Controller
             'title' => 'Поръчката е приета · Borz33',
             'order' => $order,
             'customerEmailSent' => (bool) ($_SESSION['store_last_order_customer_email_sent'] ?? false),
-            'robots' => 'noindex, nofollow',
+            'robots' => 'noindex, follow',
         ]);
     }
 

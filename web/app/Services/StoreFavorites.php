@@ -92,17 +92,17 @@ final class StoreFavorites
     {
         $image = $product->frontImage;
         $price = (float) $product->price;
-        $compare = $product->compare_at_price !== null ? (float) $product->compare_at_price : 0.0;
-        $onSale = $compare > $price && $price > 0;
+        $promo = $product->compare_at_price !== null ? (float) $product->compare_at_price : 0.0;
+        $onSale = $promo > 0 && $promo < $price;
 
         return [
             'id' => (int) $product->id,
             'name' => (string) $product->name,
             'description' => trim(strip_tags((string) ($product->short_description ?: $product->description))),
             'href' => '/products/' . $product->slug,
-            'price' => ProductPage::money($product->price),
-            'comparePrice' => $onSale ? ProductPage::money($compare) : null,
-            'discountPercent' => $onSale ? max(1, (int) round((1 - ($price / $compare)) * 100)) : null,
+            'price' => ProductPage::money($onSale ? $promo : $price),
+            'comparePrice' => $onSale ? ProductPage::money($price) : null,
+            'discountPercent' => $onSale ? max(1, (int) round((1 - ($promo / $price)) * 100)) : null,
             'weight' => ProductPage::weight($product->weight_grams),
             'image' => $image !== null ? (string) ProductImageResource::toArray($image)['url'] : null,
             'alt' => $image?->alt ?: $product->name,

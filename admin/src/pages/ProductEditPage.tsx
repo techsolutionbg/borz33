@@ -172,6 +172,7 @@ function GeneralForm({ product, token, onSaved, onCreated, aiSuggestion }: Gener
   const [tree, setTree] = useState<CategoryTreeNode[]>([]);
   const [price, setPrice] = useState(moneyInput(product?.price));
   const [compareAt, setCompareAt] = useState(moneyInput(product?.compare_at_price));
+  const [stock, setStock] = useState(String(product?.stock ?? 0));
   const [weightGrams, setWeightGrams] = useState(String(product?.weight_grams || ''));
   const [shortDescription, setShortDescription] = useState(product?.short_description ?? '');
   const [description, setDescription] = useState(product?.description ?? '');
@@ -226,6 +227,7 @@ function GeneralForm({ product, token, onSaved, onCreated, aiSuggestion }: Gener
         category_id: categoryId === 'none' ? null : Number(categoryId),
         price: toNumber(price) ?? 0,
         compare_at_price: toNumber(compareAt),
+        stock: Math.max(0, Number.parseInt(stock, 10) || 0),
         weight_grams: toNumber(weightGrams) ?? 0,
         short_description: shortDescription.trim() === '' ? null : shortDescription.trim(),
         description: description.trim() === '' ? null : description.trim(),
@@ -274,7 +276,8 @@ function GeneralForm({ product, token, onSaved, onCreated, aiSuggestion }: Gener
           onValueChange={setCategoryId}
         />
         <Field id="price" label="Цена" type="number" step="0.01" min="0" help="Базова цена „от“." value={price} onChange={(event) => setPrice(event.target.value)} error={errors.price} />
-        <Field id="compare_at_price" label="Сравнителна цена" type="number" step="0.01" min="0" help="Стара цена, ако има намаление. Празно поле я маха." value={compareAt} onChange={(event) => setCompareAt(event.target.value)} error={errors.compare_at_price} />
+        <Field id="compare_at_price" label="Цена на промоция" type="number" step="0.01" min="0" help="Промоционална цена, която трябва да е по-ниска от редовната. Празно поле я премахва." value={compareAt} onChange={(event) => setCompareAt(event.target.value)} error={errors.compare_at_price} />
+        {!product || product.variants.filter((variant) => variant.is_active).length === 0 ? <Field id="stock" label="Наличност" type="number" step="1" min="0" help="Бройки за продажба, когато продуктът няма активни варианти." value={stock} onChange={(event) => setStock(event.target.value)} error={errors.stock} /> : null}
         <Field id="weight_grams" label="Тегло (грама)" type="number" step="1" min="1" help="Нетно тегло на един продукт в грамове." value={weightGrams} onChange={(event) => setWeightGrams(event.target.value)} error={errors.weight_grams} />
         <SwitchField id="is_active" label="Активен" help="Неактивен продукт е скрит от каталога." checked={isActive} onCheckedChange={setIsActive} />
       </div>
@@ -540,6 +543,7 @@ function OptionsForm({ product, token, onSaved }: SectionFormProps) {
   const [rows, setRows] = useState<OptionDraft[]>(() => mapOptions(product.options));
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const hasChildSizeOption = rows.some((option) => isSizeOption(option));
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -578,6 +582,12 @@ function OptionsForm({ product, token, onSaved }: SectionFormProps) {
   return (
     <form className="grid gap-3" onSubmit={(event) => void onSubmit(event)} noValidate>
       <p className="m-0 text-muted-foreground">Размер, цвят и други избори. След промяна запишете и вариантите, ако комбинациите са се сменили.</p>
+      {product.child_size_values.length > 0 ? (
+        <div className="grid gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+          <p className="m-0">Този продукт е в категория „Деца“. Маркирайте само номерата, които да се предлагат. S, M, L, XL и други буквени размери не са разрешени.</p>
+          {!hasChildSizeOption ? <Button type="button" variant="outline" className="w-fit" onClick={addChildSizeOption}><Plus />Добави числови размери</Button> : null}
+        </div>
+      ) : null}
       {rows.map((option, optionIndex) => (
         <CollapsibleSection
           key={option.key}
@@ -598,6 +608,19 @@ function OptionsForm({ product, token, onSaved }: SectionFormProps) {
           }
         >
           <div className="grid gap-3">
+            {product.child_size_values.length > 0 && isSizeOption(option) ? (
+              <div className="grid gap-2">
+                <LabelWithHelp label="Предлагани размери" help="Избраните номера се показват в продуктовата страница и се използват във вариантите, количката и поръчките." />
+                <div className="flex flex-wrap gap-2">
+                  {product.child_size_values.map((size) => {
+                    const selected = option.values.some((value) => value.name === size);
+                    return <Button key={size} type="button" size="sm" variant={selected ? 'default' : 'outline'} aria-pressed={selected} onClick={() => toggleChildSize(optionIndex, size)}>{size}</Button>;
+                  })}
+                </div>
+                {fieldError(errors, `options.${optionIndex}.values`) ? <p className="m-0 text-sm text-destructive">{fieldError(errors, `options.${optionIndex}.values`)}</p> : null}
+                <p className="m-0 text-xs text-muted-foreground">При запис липсващите варианти се създават с наличност 0. Премахнатите размери и свързаните им варианти повече няма да се предлагат.</p>
+              </div>
+            ) : <>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field id={`${option.key}-name`} label="Опция" help="Името, което клиентът вижда, напр. Размер или Цвят." value={option.name} onChange={(event) => patchOption(optionIndex, { name: event.target.value })} error={fieldError(errors, `options.${optionIndex}.name`)} />
               <Field id={`${option.key}-slug`} label="Адрес" help="Празно поле се попълва от името." value={option.slug} onChange={(event) => patchOption(optionIndex, { slug: event.target.value })} error={fieldError(errors, `options.${optionIndex}.slug`)} />
@@ -618,6 +641,7 @@ function OptionsForm({ product, token, onSaved }: SectionFormProps) {
               <Plus />
               Стойност
             </Button>
+            </>}
           </div>
         </CollapsibleSection>
       ))}
@@ -658,6 +682,25 @@ function OptionsForm({ product, token, onSaved }: SectionFormProps) {
       )
     );
   }
+
+  function addChildSizeOption() {
+    setRows((current) => [...current, { key: nextKey(), name: 'Размер', slug: 'size', values: [] }]);
+  }
+
+  function toggleChildSize(optionIndex: number, size: string) {
+    setRows((current) => current.map((option, index) => {
+      if (index !== optionIndex) return option;
+      const existing = option.values.find((value) => value.name === size);
+      if (existing) return { ...option, values: option.values.filter((value) => value.name !== size) };
+      const values = [...option.values.filter((value) => product.child_size_values.includes(value.name)), { key: nextKey(), name: size, slug: size, hex_color: '' }];
+      values.sort((left, right) => product.child_size_values.indexOf(left.name) - product.child_size_values.indexOf(right.name));
+      return { ...option, name: 'Размер', slug: 'size', values };
+    }));
+  }
+}
+
+function isSizeOption(option: Pick<OptionDraft, 'name' | 'slug'>): boolean {
+  return option.slug.trim().toLocaleLowerCase('bg-BG') === 'size' || option.name.trim().toLocaleLowerCase('bg-BG').includes('размер');
 }
 
 function OptionCardTitle({ option }: { option: OptionDraft }) {
@@ -1468,7 +1511,10 @@ function ProductTemplateSection({ token, product, selection, onSelectionChange, 
     void listProductAttributeTemplates(token).then((response) => { if (!cancelled) setTemplates(response.data.templates); }).catch((error) => { if (!cancelled) toastError(error, 'Шаблоните не можаха да се заредят.'); });
     return () => { cancelled = true; };
   }, [token]);
-  const selected = templates.find((template) => template.id === selection?.templateId) ?? null;
+  const availableTemplates = product
+    ? templates.filter((template) => template.category_id === null || template.category_id === product.category_id)
+    : templates;
+  const selected = availableTemplates.find((template) => template.id === selection?.templateId) ?? null;
   const variantCount = selected?.options.reduce((count, option) => count * option.values.length, 1) ?? 0;
   const sections = selection?.sections ?? ['parameters', 'options', 'variants'];
   function setTemplate(id: string) {
@@ -1488,8 +1534,8 @@ function ProductTemplateSection({ token, product, selection, onSelectionChange, 
     finally { setBusy(false); }
   }
   return <div className="grid gap-3">
-    <div className="field"><LabelWithHelp htmlFor="product-template" label="Шаблон" help="При избор шаблонът се прилага веднага. По-късните промени по шаблона не променят продукта." /><Select value={selection ? String(selection.templateId) : 'none'} disabled={busy} onValueChange={setTemplate}><SelectTrigger id="product-template" className="w-full min-h-12 font-sans"><SelectValue placeholder="Без шаблон" /></SelectTrigger><SelectContent><SelectItem value="none">Без шаблон</SelectItem>{templates.map((template) => <SelectItem key={template.id} value={String(template.id)}>{template.name}{template.category ? ` · ${template.category.name}` : ''}</SelectItem>)}</SelectContent></Select></div>
-    {selected ? <><p className="m-0 text-sm text-muted-foreground">{selected.parameters.length} параметъра · {selected.options.length} опции · до {variantCount} комбинации.</p><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sections.includes('parameters')} onChange={() => toggle('parameters')} />Параметри</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sections.includes('options')} onChange={() => toggle('options')} />Опции</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sections.includes('variants')} onChange={() => toggle('variants')} />Генерирай липсващи варианти</label></div>{product ? <><p className="m-0 text-sm text-muted-foreground">Шаблонът се прилага автоматично при избор. Съществуващите редове и изображения не се изтриват.</p><Button type="button" className="w-fit" disabled={busy || sections.length === 0} onClick={() => void apply()}><CopyPlus />{busy ? 'Прилагане…' : 'Приложи отново'}</Button></> : <p className="m-0 text-sm text-muted-foreground">Шаблонът ще се приложи след създаването на продукта.</p>}</> : <p className="m-0 text-sm text-muted-foreground">Създайте шаблон от „Продукти → Шаблони“.</p>}
+    <div className="field"><LabelWithHelp htmlFor="product-template" label="Шаблон" help="При избор шаблонът се прилага веднага. Показват се общите шаблони и шаблоните за категорията на продукта." /><Select value={selected ? String(selected.id) : 'none'} disabled={busy} onValueChange={setTemplate}><SelectTrigger id="product-template" className="w-full min-h-12 font-sans"><SelectValue placeholder="Без шаблон" /></SelectTrigger><SelectContent><SelectItem value="none">Без шаблон</SelectItem>{availableTemplates.map((template) => <SelectItem key={template.id} value={String(template.id)}>{template.name}</SelectItem>)}</SelectContent></Select></div>
+    {selected ? <><p className="m-0 text-sm text-muted-foreground">{selected.parameters.length} параметъра · {selected.options.length} опции · до {variantCount} комбинации.</p><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sections.includes('parameters')} onChange={() => toggle('parameters')} />Параметри</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sections.includes('options')} onChange={() => toggle('options')} />Опции</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sections.includes('variants')} onChange={() => toggle('variants')} />Генерирай липсващи варианти</label></div>{product ? <><p className="m-0 text-sm text-muted-foreground">Шаблонът се прилага автоматично при избор.{selected.category_id !== null && product.child_size_values.length > 0 ? ' Старите буквени размери се заменят с числовите, а новите варианти започват с наличност 0.' : ' Съществуващите редове и изображения не се изтриват.'}</p><Button type="button" className="w-fit" disabled={busy || sections.length === 0} onClick={() => void apply()}><CopyPlus />{busy ? 'Прилагане…' : 'Приложи отново'}</Button></> : <p className="m-0 text-sm text-muted-foreground">Шаблонът ще се приложи след създаването на продукта.</p>}</> : <p className="m-0 text-sm text-muted-foreground">Няма подходящ шаблон за избраната категория.</p>}
   </div>;
 }
 

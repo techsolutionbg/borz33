@@ -15,9 +15,13 @@ final class Seo
         $baseUrl = rtrim((string) ($_ENV['WEB_PUBLIC_URL'] ?? 'http://localhost:4000'), '/');
         $path = (string) ($data['currentPath'] ?? '/');
         $title = CompanyConstants::expand(trim((string) ($data['title'] ?? $siteName)));
-        $description = CompanyConstants::expand(trim((string) ($data['metaDescription'] ?? self::description($path, $siteName))));
+        if ($title !== '' && stripos($title, $siteName) === false) {
+            $title .= ' · ' . $siteName;
+        }
+        $rawDescription = trim((string) ($data['metaDescription'] ?? ''));
+        $description = CompanyConstants::expand($rawDescription !== '' ? $rawDescription : self::description($path, $siteName));
         $indexingEnabled = self::storefrontIndexingEnabled();
-        $robots = (string) ($data['robots'] ?? ((!$indexingEnabled || self::isPrivate($path, (int) ($data['status'] ?? 200))) ? 'noindex, nofollow' : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'));
+        $robots = (string) ($data['robots'] ?? ((!$indexingEnabled || self::isPrivate($path, (int) ($data['status'] ?? 200))) ? 'noindex, follow' : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'));
         $canonicalPath = (string) ($data['canonicalPath'] ?? $path);
         $pageValue = $data['paginationPage'] ?? $data['page'] ?? 1;
         $page = max(1, is_numeric($pageValue) ? (int) $pageValue : 1);
@@ -39,7 +43,11 @@ final class Seo
             $params = [];
         }
 
-        if ($page > 1) {
+        $canonicalizeCatalogToBase = str_starts_with($path, '/catalog') && $query === '' && ($hasCatalogFilters || $page > 1);
+
+        if ($canonicalizeCatalogToBase) {
+            $params = [];
+        } elseif ($page > 1) {
             $params['page'] = $page;
         }
 
@@ -148,16 +156,28 @@ final class Seo
             return [];
         }
 
-        return [
-            [
-                '@context' => 'https://schema.org',
-                '@type' => 'Organization',
-                '@id' => $baseUrl . '/#organization',
-                'name' => $siteName,
-                'url' => $baseUrl . '/',
-                'email' => (string) ($_ENV['COMPANY_EMAIL'] ?? ''),
-                'telephone' => (string) ($_ENV['COMPANY_PHONE'] ?? ''),
+        $organization = [
+            '@context' => 'https://schema.org',
+            '@type' => 'Organization',
+            '@id' => $baseUrl . '/#organization',
+            'name' => $siteName,
+            'url' => $baseUrl . '/',
+            'sameAs' => [
+                'https://www.facebook.com/profile.php?id=61590851272689',
+                'https://www.instagram.com/borz33dtf?lqvp=N3UzemJmOGJta2Fq',
             ],
+        ];
+        $email = trim((string) ($_ENV['COMPANY_EMAIL'] ?? ''));
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) !== false) {
+            $organization['email'] = $email;
+        }
+        $telephone = trim((string) ($_ENV['COMPANY_PHONE'] ?? ''));
+        if ($telephone !== '') {
+            $organization['telephone'] = $telephone;
+        }
+
+        return [
+            $organization,
             [
                 '@context' => 'https://schema.org',
                 '@type' => 'WebSite',

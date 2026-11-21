@@ -2392,14 +2392,14 @@ body:has(.store-banner--width-full) {
     position: absolute;
     z-index: 1;
     display: none;
-    width: 12rem;
-    height: 12rem;
+    width: 14rem;
+    height: 14rem;
     transform: translate(-50%, -50%);
     border: 2px solid color-mix(in srgb, var(--canvas) 85%, var(--ink));
     border-radius: 50%;
     background-color: var(--section);
     background-repeat: no-repeat;
-    background-size: 450% 450%;
+    background-size: 650% 650%;
     box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 22%);
     pointer-events: none;
     opacity: 0;
@@ -6158,6 +6158,53 @@ html.is-cart-open {
 
 .store-pdp-ship a:hover {
     color: var(--weight-ink);
+}
+
+.store-pdp-social-links {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    margin-top: 0.9rem;
+}
+
+.store-pdp-social-label {
+    color: var(--ink);
+    font-size: 0.92rem;
+    font-weight: 650;
+}
+
+.store-pdp-social-icons {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    align-items: center;
+    gap: 0.7rem;
+}
+
+.store-pdp-social-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid color-mix(in srgb, var(--ink) 18%, var(--line));
+    border-radius: 0.45rem;
+    background: var(--canvas);
+    color: var(--ink);
+    text-decoration: none;
+    transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
+}
+
+.store-pdp-social-link:hover {
+    color: var(--weight-ink);
+    border-color: color-mix(in srgb, var(--ink) 35%, var(--line));
+    transform: translateY(-1px);
+}
+
+.store-pdp-social-link svg {
+    width: 1.45rem;
+    height: 1.45rem;
 }
 
 /* CMS content pages */

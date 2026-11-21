@@ -41,23 +41,72 @@ $options = is_array($config['options'] ?? null) ? $config['options'] : [];
 $fields = is_array($config['fields'] ?? null) ? $config['fields'] : [];
 $selected = is_array($config['selected'] ?? null) ? $config['selected'] : [];
 $front = $product->frontImage;
+$regularPrice = (float) $product->price;
+$promoPrice = $product->compare_at_price !== null ? (float) $product->compare_at_price : null;
+$displayPrice = $promoPrice !== null && $promoPrice > 0 && $promoPrice < $regularPrice ? $promoPrice : $regularPrice;
+$hasVariants = $product->variants->contains(static fn (\App\Models\ProductVariant $variant): bool => $variant->isActive());
+$siteUrl = rtrim((string) ($_ENV['WEB_PUBLIC_URL'] ?? 'https://borz33.com'), '/');
+$productUrl = $siteUrl . '/products/' . rawurlencode((string) $product->slug);
+$productDescription = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) ($product->short_description ?: $product->description))));
+$productImages = [];
+foreach ([$front, ...$product->galleryImages->all()] as $image) {
+    if ($image === null) {
+        continue;
+    }
+    $imageUrl = (string) (ProductImageResource::toArray($image)['url'] ?? '');
+    if ($imageUrl !== '') {
+        $productImages[] = $imageUrl;
+    }
+}
+$productImages = array_values(array_unique($productImages));
+$inStock = $hasVariants
+    ? $product->variants->contains(static fn (\App\Models\ProductVariant $variant): bool => $variant->isActive() && (int) $variant->stock > 0)
+    : (int) $product->stock > 0;
 $jsonLd = [
     '@context' => 'https://schema.org',
     '@type' => 'Product',
     'name' => $product->name,
-    'description' => strip_tags((string) ($product->short_description ?: $product->description)),
-    'sku' => $product->sku,
-    'image' => $front !== null ? ProductImageResource::toArray($front)['url'] : null,
+    'description' => $productDescription,
+    'url' => $productUrl,
+    'sku' => (string) $product->sku,
+    'brand' => ['@type' => 'Brand', 'name' => 'Borz33'],
+    'image' => $productImages,
     'offers' => [
         '@type' => 'Offer',
         'priceCurrency' => 'EUR',
-        'price' => $product->price,
-        'availability' => 'https://schema.org/InStock',
-        'url' => '/products/' . $product->slug,
+        'price' => $displayPrice,
+        'availability' => $inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        'itemCondition' => 'https://schema.org/NewCondition',
+        'url' => $productUrl,
     ],
+];
+if ($reviewCount > 0 && $averageRating !== null) {
+    $jsonLd['aggregateRating'] = [
+        '@type' => 'AggregateRating',
+        'ratingValue' => $averageRating,
+        'reviewCount' => $reviewCount,
+        'bestRating' => 5,
+        'worstRating' => 1,
+    ];
+}
+$breadcrumbItems = [];
+foreach ($crumbs as $position => $crumb) {
+    $href = $crumb['href'] !== null ? $siteUrl . '/' . ltrim((string) $crumb['href'], '/') : $productUrl;
+    $breadcrumbItems[] = [
+        '@type' => 'ListItem',
+        'position' => $position + 1,
+        'name' => (string) $crumb['label'],
+        'item' => $href,
+    ];
+}
+$breadcrumbJsonLd = [
+    '@context' => 'https://schema.org',
+    '@type' => 'BreadcrumbList',
+    'itemListElement' => $breadcrumbItems,
 ];
 ?>
 <script type="application/ld+json"><?= json_encode($jsonLd, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?></script>
+<script type="application/ld+json"><?= json_encode($breadcrumbJsonLd, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?></script>
 
 <article class="store-pdp" x-data='storeProduct(<?= $alpine ?>)'>
     <nav class="store-pdp-crumbs" aria-label="Път">
@@ -112,7 +161,7 @@ $jsonLd = [
 
             <p class="store-pdp-price">
                 <span class="store-pdp-compare" x-cloak x-show="onSale" x-text="format(compare)"></span>
-                <span class="store-pdp-amount" x-text="price ? format(price) : ''"><?= htmlspecialchars(ProductPage::money($product->price), ENT_QUOTES, 'UTF-8') ?></span>
+                <span class="store-pdp-amount" x-text="price ? format(price) : ''"><?= htmlspecialchars(ProductPage::money($displayPrice), ENT_QUOTES, 'UTF-8') ?></span>
             </p>
             <p class="store-product-weight"><span>Тегло</span><strong><?= htmlspecialchars(ProductPage::weight($product->weight_grams), ENT_QUOTES, 'UTF-8') ?></strong></p>
             <p class="store-pdp-meta">
@@ -221,22 +270,24 @@ $jsonLd = [
                 <p class="store-pdp-error" x-cloak x-show="error" x-text="error"></p>
 
                 <div class="store-pdp-purchase">
-                    <div class="store-pdp-purchase-qty">
-                        <span class="store-pdp-purchase-label">Количество</span>
-                        <div class="store-pdp-qty" role="group" aria-label="Количество">
-                            <button type="button" @click="minus()" aria-label="Намали">−</button>
-                            <input
-                                type="number"
-                                name="qty"
-                                min="1"
-                                max="99"
-                                value="1"
-                                x-model.number="qty"
-                                aria-label="Количество"
-                            >
-                            <button type="button" @click="plus()" aria-label="Увеличи">+</button>
+                    <?php if (!$hasVariants): ?>
+                        <div class="store-pdp-purchase-qty">
+                            <span class="store-pdp-purchase-label">Количество</span>
+                            <div class="store-pdp-qty" role="group" aria-label="Количество">
+                                <button type="button" @click="minus()" aria-label="Намали">−</button>
+                                <input
+                                    type="number"
+                                    name="qty"
+                                    min="1"
+                                :max="maxQty"
+                                    value="1"
+                                    x-model.number="qty"
+                                    aria-label="Количество"
+                                >
+                                <button type="button" @click="plus()" aria-label="Увеличи">+</button>
+                            </div>
                         </div>
-                    </div>
+                    <?php endif; ?>
 
                     <button type="submit" class="store-submit store-pdp-add" :disabled="!canBuy || submitting">
                         <span x-text="submitting ? 'Добавяне…' : 'Добави в количката'">Добави в количката</span>
@@ -263,6 +314,21 @@ $jsonLd = [
                 <a href="https://www.econt.com/services/courier-services" target="_blank" rel="noopener noreferrer">информацията за куриерските услуги и доставката</a>.
                 Точната цена и срок се потвърждават при поръчка.
             </p>
+            <p class="store-pdp-custom-order">
+                За уникални поръчки можете да се обадите на телефон
+                <a href="tel:+359887365216">+359 887 365 216</a>.
+            </p>
+            <div class="store-pdp-social-links" aria-label="Социални мрежи">
+                <span class="store-pdp-social-label">Последвайте ни:</span>
+                <div class="store-pdp-social-icons">
+                    <a class="store-pdp-social-link" href="https://www.facebook.com/profile.php?id=61590851272689" target="_blank" rel="noopener noreferrer" aria-label="Последвайте ни във Facebook">
+                        <?= Html::iconSvg('facebook') ?>
+                    </a>
+                    <a class="store-pdp-social-link" href="https://www.instagram.com/borz33dtf?lqvp=N3UzemJmOGJta2Fq" target="_blank" rel="noopener noreferrer" aria-label="Последвайте ни в Instagram">
+                        <?= Html::iconSvg('instagram') ?>
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 

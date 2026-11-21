@@ -12,6 +12,7 @@ use App\Models\ProductPersonalizationField;
 use App\Models\ProductVariant;
 use App\Models\ProductVariantValue;
 use App\Models\SiteSetting;
+use App\Services\Products\ChildSizeCatalog;
 
 class ProductResource
 {
@@ -49,11 +50,13 @@ class ProductResource
             'slug' => $product->slug,
             'category_id' => $product->category_id,
             'category' => self::categorySummary($product),
+            'child_size_values' => ChildSizeCatalog::valuesForCategoryId($product->category_id),
             'sku' => $product->sku,
             'short_description' => $product->short_description,
             'description' => $product->description,
             'price' => $product->price,
             'compare_at_price' => $product->compare_at_price,
+            'stock' => (int) $product->stock,
             'weight_grams' => (int) $product->weight_grams,
             'is_active' => $product->is_active,
             'personalization_enabled' => (bool) ($personalization['enabled'] ?? false),
@@ -126,6 +129,7 @@ class ProductResource
             'short_description' => $product->short_description,
             'price' => $product->price,
             'compare_at_price' => $product->compare_at_price,
+            'stock' => (int) $product->stock,
             'weight_grams' => (int) $product->weight_grams,
             'is_active' => $product->is_active,
             'personalization_enabled' => $product->personalization_enabled,

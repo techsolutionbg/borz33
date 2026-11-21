@@ -262,6 +262,10 @@ class ProductAdminService
             $attributes['price'] = $data['price'];
         }
 
+        if (array_key_exists('stock', $data)) {
+            $attributes['stock'] = (int) $data['stock'];
+        }
+
         if (array_key_exists('weight_grams', $data)) {
             $attributes['weight_grams'] = (int) $data['weight_grams'];
         }
@@ -306,6 +310,7 @@ class ProductAdminService
             'description' => $data['description'] ?? null,
             'price' => $data['price'],
             'compare_at_price' => $data['compare_at_price'] ?? null,
+            'stock' => (int) ($data['stock'] ?? 0),
             'weight_grams' => (int) $data['weight_grams'],
             'is_active' => (bool) $data['is_active'],
             'personalization_enabled' => (bool) $data['personalization_enabled'],
@@ -370,11 +375,21 @@ class ProductAdminService
     /** @param list<array<string, mixed>> $rows */
     private function syncOptions(Product $product, array $rows): void
     {
+        $childSizes = ChildSizeCatalog::valuesForCategoryId((int) $product->category_id);
         $keep = [];
         $usedSlugs = [];
 
         foreach ($rows as $index => $row) {
             $slug = $this->childSlug((string) ($row['slug'] ?? ''), (string) $row['name']);
+
+            if ($childSizes !== [] && ChildSizeCatalog::isSizeOption((string) $row['name'], $slug)) {
+                $values = array_map(static fn (mixed $value): string => trim((string) (is_array($value) ? ($value['name'] ?? '') : $value)), is_array($row['values'] ?? null) ? $row['values'] : []);
+                if ($values === [] || array_diff($values, $childSizes) !== [] || count($values) !== count(array_unique($values))) {
+                    throw new ValidationException([
+                        'options.' . $index . '.values' => ['Изберете поне един уникален числов размер от стандартния списък за подкатегорията.'],
+                    ]);
+                }
+            }
 
             if (isset($usedSlugs[$slug])) {
                 throw new ValidationException(['options.' . $index . '.slug' => ['Адресът на опцията се повтаря.']]);
@@ -399,6 +414,10 @@ class ProductAdminService
         }
 
         $query->delete();
+
+        if ($childSizes !== []) {
+            (new ProductAttributeTemplateService())->generateMissingVariantsForProduct($product);
+        }
     }
 
     /** @param list<array<string, mixed>> $rows */
@@ -433,6 +452,21 @@ class ProductAdminService
 
         if ($keep !== []) {
             $query->whereNotIn('id', $keep);
+        }
+
+        $removedValueIds = (clone $query)->pluck('id')->all();
+        if ($removedValueIds !== []) {
+            $removedVariantIds = ProductVariantValue::query()
+                ->whereIn('product_option_value_id', $removedValueIds)
+                ->pluck('product_variant_id')
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($removedVariantIds !== []) {
+                $this->images->deleteForVariantIds($removedVariantIds);
+                ProductVariant::withTrashed()->whereIn('id', $removedVariantIds)->forceDelete();
+            }
         }
 
         $query->delete();

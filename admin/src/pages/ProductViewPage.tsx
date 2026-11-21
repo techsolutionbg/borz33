@@ -215,7 +215,7 @@ export function ProductViewPage() {
                   <dd className="m-0 font-bold">{formatMoney(product.price)}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">Сравнителна цена</dt>
+                  <dt className="text-muted-foreground">Цена на промоция</dt>
                   <dd className="m-0">{formatMoney(product.compare_at_price)}</dd>
                 </div>
               </dl>

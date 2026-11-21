@@ -107,7 +107,7 @@ final class ProductFactory
             'short_description' => 'Памучна тениска за ежедневно носене. Мека, лека и удобна кройка.',
             'description' => $this->faker->paragraphs(2, true),
             'price' => $price,
-            'compare_at_price' => $onSale ? round($price + 10, 2) : null,
+            'compare_at_price' => $onSale ? round(max(0.01, $price - 10), 2) : null,
             'is_active' => true,
             'personalization_enabled' => $personalized,
             'personalization_label' => $personalized ? 'Текст за печат' : null,

@@ -3,12 +3,13 @@
 declare(strict_types=1);
 
 use Store\Core\Html;
+use App\Services\Company\CompanyProfile;
 
 /** @var \App\Models\User|null $currentUser */
 /** @var \Illuminate\Support\Collection<int, \App\Models\Category> $navCategories */
 /** @var array{url: string, alt: string}|null $siteLogo */
 
-$company = require dirname(__DIR__, 3) . '/config/company.php';
+$company = CompanyProfile::get();
 $footerEscape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 $footerInternalPath = static function (mixed $value, string $fallback): string {
     $path = parse_url(trim((string) $value), PHP_URL_PATH);
@@ -98,14 +99,6 @@ $siteName = trim((string) ($company['name'] ?? 'Borz33')) ?: 'Borz33';
 
         <div class="store-footer-bottom">
             <p>© <?= date('Y') ?> <?= $footerEscape($company['legal_name'] ?? $company['name'] ?? 'Borz33') ?>. Всички права запазени.</p>
-            <p>
-                <?php if (trim((string) ($company['eik'] ?? '')) !== '' && trim((string) $company['eik']) !== '000000000'): ?>
-                    ЕИК <?= $footerEscape($company['eik']) ?>
-                <?php endif; ?>
-                <?php if (trim((string) ($company['vat'] ?? '')) !== ''): ?>
-                    <span>ДДС № <?= $footerEscape($company['vat']) ?></span>
-                <?php endif; ?>
-            </p>
         </div>
     </div>
 </footer>

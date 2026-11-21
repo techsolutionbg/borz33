@@ -139,15 +139,15 @@ class ProductPage
                     $values[$optionSlug] = $valueSlug;
                 }
 
-                $price = self::variantPrice($product, $variant);
-                $compare = self::variantCompare($product, $variant, $price);
+                $regularPrice = self::variantPrice($product, $variant);
+                $promoPrice = self::variantCompare($product, $variant, $regularPrice);
 
                 return [
                     'id' => (int) $variant->id,
                     'sku' => $variant->sku !== '' ? (string) $variant->sku : (string) $product->sku,
                     'name' => (string) $variant->name,
-                    'price' => $price,
-                    'compare_at_price' => $compare,
+                    'price' => $promoPrice ?? $regularPrice,
+                    'compare_at_price' => $promoPrice !== null ? $regularPrice : null,
                     'stock' => (int) $variant->stock,
                     'image' => $variant->image !== null ? self::image($variant->image, $product->name) : null,
                     'values' => $values,
@@ -157,15 +157,15 @@ class ProductPage
 
         if ($variants === []) {
             $price = (string) $product->price;
-            $compare = $product->compare_at_price;
-            $compareValue = $compare !== null && (float) $compare > (float) $price ? (string) $compare : null;
+            $promo = $product->compare_at_price;
+            $promoValue = $promo !== null && (float) $promo > 0 && (float) $promo < (float) $price ? (string) $promo : null;
             $variants[] = [
                 'id' => 0,
                 'sku' => (string) ($product->sku ?? ''),
                 'name' => $product->name,
-                'price' => $price,
-                'compare_at_price' => $compareValue,
-                'stock' => 99,
+                'price' => $promoValue ?? $price,
+                'compare_at_price' => $promoValue !== null ? $price : null,
+                'stock' => (int) $product->stock,
                 'image' => null,
                 'values' => [],
             ];
@@ -264,11 +264,12 @@ class ProductPage
 
     public static function unitPrice(Product $product, ?ProductVariant $variant): string
     {
-        if ($variant === null) {
-            return (string) $product->price;
-        }
+        $regular = $variant === null ? (string) $product->price : self::variantPrice($product, $variant);
+        $promo = $variant === null ? $product->compare_at_price : ($variant->compare_at_price ?? $product->compare_at_price);
 
-        return self::variantPrice($product, $variant);
+        return $promo !== null && (float) $promo > 0 && (float) $promo < (float) $regular
+            ? (string) $promo
+            : $regular;
     }
 
     public static function defaultVariantId(array $config): int
@@ -327,7 +328,7 @@ class ProductPage
     {
         $compare = $variant->compare_at_price ?? $product->compare_at_price;
 
-        if ($compare === null || (float) $compare <= (float) $price) {
+        if ($compare === null || (float) $compare <= 0 || (float) $compare >= (float) $price) {
             return null;
         }
 

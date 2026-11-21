@@ -20,6 +20,30 @@ class StoreCart
     {
         $qty = max(1, min(self::MAX_QTY, $qty));
         $items = self::items();
+
+        $product = Product::query()->with('variants')->find($productId);
+        $stock = 0;
+
+        if ($product instanceof Product) {
+            if ($variantId > 0) {
+                $variant = $product->variants->first(static fn (ProductVariant $item): bool => (int) $item->id === $variantId && $item->isActive());
+                $stock = $variant instanceof ProductVariant ? (int) $variant->stock : 0;
+            } else {
+                $stock = (int) $product->stock;
+            }
+        }
+
+        $inCart = 0;
+        foreach ($items as $item) {
+            if ((int) ($item['product_id'] ?? 0) === $productId && (int) ($item['variant_id'] ?? 0) === $variantId) {
+                $inCart += (int) ($item['qty'] ?? 0);
+            }
+        }
+
+        if ($stock < 1 || $inCart + $qty > $stock) {
+            throw new \RuntimeException('Няма достатъчно наличност за добавяне на това количество.');
+        }
+
         $key = self::lineKey($productId, $variantId, $personalization);
 
         if (isset($items[$key])) {
@@ -136,7 +160,7 @@ class StoreCart
                 continue;
             }
 
-            if ($variant !== null && !$variant->isInStock()) {
+            if (($variant !== null && !$variant->isInStock()) || ($variant === null && (int) $product->stock < 1)) {
                 $changed = true;
                 continue;
             }
@@ -173,7 +197,7 @@ class StoreCart
                 'product_id' => (int) $product->id,
                 'variant_id' => $row['variant_id'],
                 'qty' => $qty,
-                'stock' => $variant !== null ? (int) $variant->stock : self::MAX_QTY,
+                'stock' => $variant !== null ? (int) $variant->stock : (int) $product->stock,
                 'name' => (string) $product->name,
                 'href' => '/products/' . $product->slug,
                 'sku' => $variant !== null && $variant->sku !== '' ? (string) $variant->sku : (string) ($product->sku ?? ''),

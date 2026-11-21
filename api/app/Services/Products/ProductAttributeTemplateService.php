@@ -52,11 +52,17 @@ class ProductAttributeTemplateService
         $template = $this->find($templateId);
         $sections = array_values(array_intersect(['parameters', 'options', 'variants'], $sections));
         if ($sections === []) throw new ValidationException(['sections' => ['Изберете поне една секция от шаблона.']]);
+        if ($template->category_id !== null && (int) $template->category_id !== (int) $product->category_id) {
+            throw new ValidationException(['template_id' => ['Шаблонът е предназначен за друга категория.']]);
+        }
 
         return Capsule::connection()->transaction(function () use ($product, $template, $sections): Product {
             if (in_array('parameters', $sections, true)) $this->mergeParameters($product, $template->parameters ?? []);
-            if (in_array('options', $sections, true) || in_array('variants', $sections, true)) $this->mergeOptions($product, $template->options ?? []);
-            if (in_array('variants', $sections, true)) $this->generateMissingVariants($product);
+            $replacedChildSizes = false;
+            if (in_array('options', $sections, true) || in_array('variants', $sections, true)) {
+                $replacedChildSizes = $this->mergeOptions($product, $template->options ?? []);
+            }
+            if (in_array('variants', $sections, true) || $replacedChildSizes) $this->generateMissingVariantsForProduct($product);
 
             return $product->fresh(['parameters', 'options.values', 'variants.optionValues', 'variants.image', 'frontImage', 'galleryImages', 'category']) ?? $product;
         });
@@ -70,6 +76,21 @@ class ProductAttributeTemplateService
         if (array_key_exists('category_id', $result) && !$result['category_id']) $result['category_id'] = null;
         if (array_key_exists('parameters', $result)) $result['parameters'] = $this->normaliseParameters(is_array($result['parameters']) ? $result['parameters'] : []);
         if (array_key_exists('options', $result)) $result['options'] = $this->normaliseOptions(is_array($result['options']) ? $result['options'] : []);
+        $childSizes = ChildSizeCatalog::valuesForCategoryId(isset($result['category_id']) ? (int) $result['category_id'] : null);
+        if ($childSizes !== []) {
+            foreach ($result['options'] ?? [] as $index => $option) {
+                if (!ChildSizeCatalog::isSizeOption((string) ($option['name'] ?? ''), (string) ($option['slug'] ?? ''))) {
+                    continue;
+                }
+
+                $values = array_map(static fn (array $value): string => (string) ($value['name'] ?? ''), $option['values'] ?? []);
+                if ($values === [] || array_diff($values, $childSizes) !== [] || count($values) !== count(array_unique($values))) {
+                    throw new ValidationException([
+                        'options.' . $index . '.values' => ['Изберете поне един уникален числов размер от стандартния списък за подкатегорията.'],
+                    ]);
+                }
+            }
+        }
         return $result;
     }
 
@@ -110,14 +131,30 @@ class ProductAttributeTemplateService
     }
 
     /** @param list<array<string, mixed>> $rows */
-    private function mergeOptions(Product $product, array $rows): void
+    private function mergeOptions(Product $product, array $rows): bool
     {
+        $childSizes = ChildSizeCatalog::valuesForCategoryId($product->category_id);
+        $replacedChildSizes = false;
         $existing = ProductOption::query()->where('product_id', $product->id)->with('values')->get()->keyBy('slug');
         foreach ($rows as $index => $row) {
             $option = $existing->get($row['slug']);
             if (!$option) {
                 $option = ProductOption::query()->create(['product_id' => $product->id, 'name' => $row['name'], 'slug' => $row['slug'], 'sort_order' => $existing->count() + $index]);
                 $existing->put($option->slug, $option); $option->setRelation('values', collect());
+            }
+            if ($childSizes !== [] && ChildSizeCatalog::isSizeOption((string) $row['name'], (string) $row['slug'])) {
+                $allowedSlugs = array_column($row['values'], 'slug');
+                $removedValueIds = $option->values->whereNotIn('slug', $allowedSlugs)->pluck('id')->all();
+                if ($removedValueIds !== []) {
+                    $removedVariantIds = ProductVariantValue::query()->whereIn('product_option_value_id', $removedValueIds)->pluck('product_variant_id')->unique()->values()->all();
+                    if ($removedVariantIds !== []) {
+                        (new ProductImageService())->deleteForVariantIds($removedVariantIds);
+                        ProductVariant::withTrashed()->whereIn('id', $removedVariantIds)->forceDelete();
+                    }
+                    ProductOptionValue::query()->whereIn('id', $removedValueIds)->delete();
+                }
+                $replacedChildSizes = true;
+                $option->load('values');
             }
             $values = $option->relationLoaded('values') ? $option->values->keyBy('slug') : collect();
             foreach ($row['values'] as $valueIndex => $rowValue) {
@@ -126,9 +163,10 @@ class ProductAttributeTemplateService
                 $values->put($created->slug, $created);
             }
         }
+        return $replacedChildSizes;
     }
 
-    private function generateMissingVariants(Product $product): void
+    public function generateMissingVariantsForProduct(Product $product): void
     {
         $product->load(['options.values', 'variants.variantValues']);
         if ($product->options->isEmpty()) return;

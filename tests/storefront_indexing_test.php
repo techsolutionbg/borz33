@@ -22,7 +22,7 @@ try {
         $settings->storefront_indexing_enabled = false;
         $settings->save();
         $private = Seo::build(['currentPath' => '/']);
-        $assert($private['robots'] === 'noindex, nofollow', 'Изключената индексация не задава noindex, nofollow.');
+        $assert($private['robots'] === 'noindex, follow', 'Изключената индексация не задава noindex, follow.');
 
         $settings->storefront_indexing_enabled = true;
         $settings->save();
@@ -30,7 +30,7 @@ try {
         $assert(str_starts_with($public['robots'], 'index, follow'), 'Включената индексация не задава index, follow.');
 
         $account = Seo::build(['currentPath' => '/account/orders']);
-        $assert($account['robots'] === 'noindex, nofollow', 'Личните страници не са защитени от индексиране.');
+        $assert($account['robots'] === 'noindex, follow', 'Личните страници не са защитени от индексиране.');
     });
     echo "Storefront indexing test passed.\n";
 } finally {

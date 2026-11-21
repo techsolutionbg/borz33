@@ -52,7 +52,7 @@ export function registerStoreProduct(Alpine) {
       zoomStyle() {
         if (!this.image) return {};
 
-        const zoomFactor = 4.5;
+        const zoomFactor = 6.5;
         // Keep the point under the cursor in the centre of the lens,
         // including when the cursor is close to an image edge.
         const backgroundPosition = (coordinate) =>

@@ -29,6 +29,7 @@ export type ProductListItem = {
   short_description: string | null;
   price: string | number;
   compare_at_price: string | number | null;
+  stock: number;
   weight_grams: number;
   is_active: boolean;
   personalization_enabled: boolean;
@@ -98,6 +99,7 @@ export type ProductPersonalizationField = {
 };
 
 export type AdminProduct = ProductListItem & {
+  child_size_values: string[];
   description: string | null;
   personalization_label: string | null;
   personalization_description: string | null;

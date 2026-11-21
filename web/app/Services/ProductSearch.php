@@ -50,8 +50,8 @@ class ProductSearch
     private static function toArray(Product $product): array
     {
         $price = (float) $product->price;
-        $compare = $product->compare_at_price !== null ? (float) $product->compare_at_price : null;
-        $onSale = $compare !== null && $compare > $price;
+        $promo = $product->compare_at_price !== null ? (float) $product->compare_at_price : null;
+        $onSale = $promo !== null && $promo > 0 && $promo < $price;
         $image = $product->frontImage;
 
         return [
@@ -60,9 +60,9 @@ class ProductSearch
             'slug' => $product->slug,
             'url' => '/products/' . $product->slug,
             'sku' => $product->sku,
-            'price' => $product->price,
-            'compare_at_price' => $onSale ? $product->compare_at_price : null,
-            'savings' => $onSale ? number_format($compare - $price, 2, '.', '') : null,
+            'price' => $onSale ? $product->compare_at_price : $product->price,
+            'compare_at_price' => $onSale ? $product->price : null,
+            'savings' => $onSale ? number_format($price - $promo, 2, '.', '') : null,
             'on_sale' => $onSale,
             'image' => $image !== null ? ProductImageResource::toArray($image)['url'] : null,
             'image_alt' => $image?->alt ?: $product->name,
